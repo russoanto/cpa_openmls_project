@@ -53,9 +53,47 @@ Un requisito fondamentale di MLS è che deve supportare il funzionamento asincro
 ## The MLS Approach: TreeSync, TreeKEM, TreeDEM
 Il protocollo MLS raggiunge i suoi obiettivi di performance e sicurezza utilizzando alberi binari per rappresentare la struttura dei dati di gruppo e per stabilire in modo efficiente le chiavi di gruppo. In particolare, l'array di membri raffigurato sopra si trasforma in foglie di un albero binario, dove i nodi interni rappresentano sottogruppi costituiti dai membri sottostanti.
 ![[mls-array-tree.png]]
+<sup>Fig. 1</sup>
 Ad alto livello, MLS può essere suddiviso in tre sottoprotocolli che popolano, sincronizzano e utilizzano questa struttura di dati ad albero per stabilire chiavi condivise per il gruppo e utilizzarle per la messaggistica sicura. Chiamiamo questi tre sottoprotocolli TreeSync, TreeKEM e TreeDEM. Questa decomposizione di MLS non è esplicitamente specificata nello standard.
 - **TreeSync**: Gestione autenticata del gruppo Il sottoprotocollo TreeSync garantisce che tutti i membri del gruppo abbiano una visione coerente e autenticata dello stato del gruppo, compresi l'array dei membri e le chiavi memorizzate nella struttura dati ad albero MLS. TreeSync definisce tutte le operazioni di gestione del gruppo e utilizza tecniche multiple di hashing dell'albero (non dissimili dagli alberi di Merkle) e firme per garantire l'accordo di appartenenza e l'integrità dello stato del gruppo. Questo serve come precondizione essenziale per la creazione delle chiavi.
 - **TreeKEM**: Il sottoprotocollo TreeKEM utilizza la struttura dei dati ad albero per generare chiavi di sottogruppo per ogni nodo interno dell'albero, compresa una chiave di gruppo per la radice che viene condivisa tra tutti i membri del gruppo nell'epoca corrente. Ogni volta che i membri del gruppo cambiano, TreeKEM genera una nuova chiave di gruppo e la trasmette in modo efficiente a tutti gli altri membri. Finché tutti i membri contribuiscono attivamente al gruppo, tutte le operazioni di TreeKEM hanno un costo proporzionale all'altezza dell'albero, cioè logaritmico rispetto alla dimensione del gruppo. Tuttavia, se solo alcuni membri contribuiscono attivamente, il costo di ogni operazione può diventare lineare rispetto alle dimensioni del gruppo.
 - **TreeDEM**: Il sottoprotocollo TreeDEM utilizza le chiavi di gruppo stabilite da TreeKEM per crittografare e autenticare i messaggi applicativi inviati in ogni epoca. TreeDEM garantisce la  forward security dei messaggi applicativi, utilizzando la struttura dei dati ad albero per decidere quali chiavi derivare e quando cancellarle.
 ### TreeKEM
 TreeKEM è un sottoprotocollo di MLS che si basa su collision-resistant hash function (**H**), un meccanismo di cifratura a chiave pubblica (pgen, penc, pdec), una funzione pseudo-random utilizzata per la key derivation function (**kdf**) e uno schema di cifratura autenticato(gen, enc, dec). 
+**trees of sub-groups**: Assumiamo che ogni gruppo di messaggistica nello stato globale sia la radice di un albero in cui ogni nodo dell'albero corrisponde a un sottogruppo. Le foglie dell'albero sono dispositivi (cioè gruppi con un solo membro). Per semplicità, supponiamo un albero binario bilanciato a sinistra, ma il protocollo è facilmente generalizzabile a un albero di arietà e struttura arbitraria. Quindi, ogni gruppo di messaggistica composto da n dispositivi forma un albero di altezza log⁡(n), dove ogni dispositivo (nodo foglia) è membro di fino a log⁡(n) gruppi (i suoi antenati nell'albero) e la radice corrisponde al gruppo di messaggistica.
+**Local State**: 
+- **M_i**: sono i gruppi di messaggistica a cui d_i appartiene
+- **encryption_key**: M_i --> K_ae : chiavi crittografiche autenticate per i gruppi di messaggistica di d_i
+- **G_i**: insieme di sottogruppi a cui d_i appartiene compreso il sottogruppo {d_i}
+- **secret_key**: G_i --> K_s: chiavi segrete per i gruppi di messaggistica a cui d_i appartiene
+- **public_key**: sibling(G_i) --> P: chiavi pubbliche per i gruppi fratelli di G_i
+Quindi, per ogni gruppo di messaggistica g_i , d_i deve conservare la chiave crittografica del gruppo, le chiavi segrete per tutti i gruppi sul path(d_i, g_j) e le chiavi pubbliche per tutti i gruppi sul copath(d_i, g_j).
+- **path(d_i,g_j)** --> g_0,....,g_j: intendiamo la sequenza di gruppi da d_i(nodo foglia, dispositivo) alla radice dell'albero g_j, dove g_0 = {d_i}, g_(k+1) = parent(g_k)
+- **copath(d_i,g_j)** --> g_0^',...,g_j^': i fratelli di ogni gruppo nel path(d_i,g_j)
+Quindi, i requisiti di archiviazione per ogni gruppo di dimensione n a cui di decide di aderire sono O(log(n)).
+#### Differenza con ART
+Vale la pena notare che fino a questo punto le strutture di gruppo e gli stati locali memorizzati in ART e TreeKEM sono gli stessi. L'unica differenza è che in ART le chiavi di ogni gruppo (chiave segreta(g), chiave pubblica(g)) devono corrispondere a una coppia di chiavi Diffie-Hellman, mentre in TreeKEM possiamo scegliere qualsiasi coppia di chiavi che supporti l'incapsulamento delle chiavi (KEM).
+#### Computing Tree Keys
+Per calcolare le chiavi di gruppo, è necessario assegnare a ogni nodo dell'albero una coppia di chiavi nota solo ai membri del gruppo, cioè ai dispositivi che appaiono come foglie nel sottoalbero corrente. In una foglia, generiamo coppie di chiavi KEM fresche per ogni dispositivo (chiave segreta(d_i), chiave pubblica(d_i)). Per ogni nodo interno, la chiave segreta viene calcolata come hash della chiave segreta di uno dei due figli, intuitivamente l'ultimo figlio che ha effettuato un'operazione di gruppo. La chiave di autenticazione per la cifratura del gruppo di messaggistica (encryption key(d_j)) è derivata (come una catena di invocazioni KDF) dalla sequenza di chiavi alla radice dell'albero. In TreeKEM, quindi, le chiavi interne dei nodi dipendono solo da uno dei due figli. Le chiavi dei nodi interni di TreeKEM non sono contributive (a differenza di ART) e questo porta direttamente ad alcuni dei vantaggi di TreeKEM per quanto riguarda la concorrenza. Si noti che la chiave di cifratura del gruppo di messaggistica è ancora contributiva, nel senso che incorpora il materiale di cifratura di tutti i nodi che hanno avviato un'operazione di gruppo.
+![[TreeKEM.png|Caption]]
+<sup>Fig. 2</sup>
+L'immagine Fig.2 rappresenta un gruppo appena creato di cinque dispositivi (A,B,C,D,E). Ogni nodo è annotato con la chiave segreta di gruppo assegnata a quel nodo (per semplicità, le nostre figure utilizzano il nome del dispositivo per riferirsi anche alla sua chiave segreta). Le chiavi dell'albero sono calcolate come se i nodi fossero stati aggiunti in ordine da sinistra a destra, in modo che l'ultimo dispositivo (E) determini la chiave dei suoi antenati.
+![[updateKEM.png]]
+<sup>Fig. 3: Il dispositivo B aggiorna le chiavi per tutti i gruppi a cui appartiene, ottenendo una nuova chiave di gruppo K1</sup>
+La Fig.3 rappresenta l'albero dopo che il dispositivo B ha effettuato un aggiornamento, generando una nuova chiave B' e installando una sequenza di chiavi con hash lungo l'albero.
+
+![[addKEM.png]]
+<sup>Fig 4: Il dispositivo F viene aggiunto al gruppo e si ottiene una nuova chiave di gruppo K2.</sup>
+La Fig.4 mostra l'albero dopo l'aggiunta di un nuovo dispositivo F al gruppo con una nuova chiave F e l'installazione di una sequenza di chiavi hash lungo l'albero.
+
+![[removeKEM.png]]
+<sup>Fig 5: Il dispositivo C viene rimosso dal gruppo e si ottiene una nuova chiave di gruppo K3.</sup>
+
+La fig. 5 mostra l'albero dopo che il dispositivo C è stato rimosso dal gruppo e a tutti i suoi gruppi è stata data una sequenza di chiavi hash a partire da una nuova chiave C' che **è sconosciuta a C**.
+
+![[issueUpdateKEM.png]]
+<sup>Fig. 6</sup>
+
+
+#### Cos'è un sottogruppo?
+Un sottogruppo è un insieme di dispositivi (o membri) che occupano una porzione specifica dell'albero di TreeKEM. Nell'albero, i nodi interni rappresentano i sottogruppi, mentre le foglie rappresentano i singoli dispositivi. Ogni sottogruppo è, quindi, un sottoinsieme dei membri totali del gruppo di comunicazione. Il protocollo MLS utilizza una struttura ad albero per ogni gruppo per costruire una serie di sottogruppi ausiliari che aiutano a ridurre la complessità di ogni operazione di gruppo.
