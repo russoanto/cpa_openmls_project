@@ -1,12 +1,20 @@
 # Simple MLS Protocol Demonstration
 
 This project is developed as part of the Applied Cryptography course and aims to demonstrate the basic functioning of the Messaging Layer Security (MLS) protocol. The application simulates a secure group messaging environment where users can join, leave, and communicate securely using the MLS protocol.
-Features
-
-    - Group Creation: Users can create secure messaging groups.
-    - User Management: Users can join and leave groups dynamically.
-    - Message Encryption: All messages are encrypted using the MLS protocol.
-    - Key Rotation: The application supports key rotation to maintain forward secrecy.
+Features:
+This test simulates various group operations like Add, Update, Remove in a small group
+- Alice creates a group
+- Alice adds Bob
+- Alice sends a message to Bob
+- Bob updates and commits
+- Alice updates and commits
+- Bob adds Charlie
+- Charlie sends a message to the group
+- Charlie updates and commits
+- Charlie removes Bob
+- Alice removes Charlie and adds Bob
+- Bob leaves
+- Test saving the group state
 
 # Purpose
 
