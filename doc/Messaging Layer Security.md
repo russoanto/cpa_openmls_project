@@ -50,6 +50,109 @@ MLS mira a fornire una serie di garanzie di sicurezza, che coprono l'autenticazi
 Il primo obiettivo di sicurezza veramente innovativo di MLS è l'accordo di appartenenza, che garantisce che i membri del gruppo siano d'accordo tra loro sull'appartenenza attuale. In pratica, MLS richiede un accordo ancora più forte sull'intera storia di appartenenza del gruppo e sui suoi stati crittografici. Si noti che i protocolli di gruppo attualmente in uso, come Signal Sender Keys, non prevedono un accordo di appartenenza. Gli ultimi due obiettivi riguardano la nozione di sicurezza post-compromissione (PCS) per la messaggistica di gruppo. A differenza della messaggistica a due parti, in cui è necessario spiegare la PCS in termini di situazioni ipotetiche come il furto temporaneo di un dispositivo, i gruppi richiedono una nozione più semplice di recupero dalla compromissione dopo la rimozione. Forse l'obiettivo di sicurezza più importante per MLS è che una volta che un membro è stato rimosso dal gruppo, non può più leggere o scrivere messaggi. Inoltre, MLS fornisce anche una sicurezza post-aggiornamento, proprio come i protocolli a due parti come Signal. Vale la pena notare che la maggior parte dei protocolli di messaggistica di gruppo, tra cui Signal Sender Keys, non forniscono nessuna di queste due proprietà.
 ## Performance Constraints
 Un requisito fondamentale di MLS è che deve supportare il funzionamento asincrono. In altre parole, i membri devono essere in grado di inviare messaggi e apportare modifiche al gruppo senza richiedere che gli altri membri siano online nello stesso momento. Ciò significa che la maggior parte dei classici protocolli di scambio di chiavi di gruppo della letteratura crittografica non sono adatti a MLS. Tuttavia, progettare un protocollo asincrono semplice che soddisfi gli obiettivi di sicurezza sopra descritti non è difficile e tali protocolli sono già stati implementati in Signal, WhatsApp, Matrix, ecc. Il principale vincolo di progettazione è la scalabilità. MLS è pensato per funzionare per gruppi con migliaia di utenti, quindi i protocolli che richiedono calcoli pesanti ai mittenti o ai destinatari o messaggi di grandi dimensioni diventano impraticabili con l'aumentare delle dimensioni del gruppo. La maggior parte dei protocolli di messaggistica di gruppo attualmente in uso scalano linearmente (e a volte quadraticamente) con il numero di utenti e sono in grado di supportare solo gruppi di dimensioni comprese tra 256 e 1024 membri. Il principale collo di bottiglia è rappresentato dal numero di operazioni a chiave pubblica necessarie per l'aggiunta o l'aggiornamento dei membri. Il requisito dichiarato nello statuto dell'MLS è che i requisiti delle risorse debbano scalare linearmente o sub-linearmente con le dimensioni del gruppo.
+
+## Cryptographic Objects
+### Cipher Suite
+Ogni sessione MLS utilizza una singola suite di cifratura che specifica le seguenti primitive da utilizzare nel calcolo delle chiavi di gruppo:
+- HPKE (hybrid public key encryption):
+	- A Key Encapsulation Mechanism (KEM)
+	- A Key Derivation Function (KDF)
+	- An Authenticated Encryption with Associated Data (AEAD) encryption algorithm
+- Un algoritmo di hashing
+- Algoritmo di message authentication code (MAC)
+- Algoritmo di firma
+Cipher suites are represented with the CipherSuite type.
+### Public Keys
+Le chiavi pubbliche HPKE sono valori opachi in un formato definito dal protocollo sottostante.
+
+```
+opaque HPKEPublicKey<V>;
+```
+Signature public keys are likewise represented as opaque values in a format defined by the cipher suite's signature scheme.
+```
+opaque SignaturePublicKey<V>;
+```
+
+### Signing
+L'algoritmo di firma specificato nella suite di cifratura di un gruppo è l'algoritmo obbligatorio da utilizzare per firmare i messaggi all'interno del gruppo. DEVE essere lo stesso dell'algoritmo di firma specificato nelle credenziali delle foglie dell'albero (comprese le informazioni dei nodi foglia nei KeyPackages usati per aggiungere nuovi membri). To disambiguate different signatures used in MLS, each signed value is prefixed by a label as shown below:
+```
+SignWithLabel(SignatureKey, Label, Content) =
+    Signature.Sign(SignatureKey, SignContent)
+
+VerifyWithLabel(VerificationKey, Label, Content, SignatureValue) =
+    Signature.Verify(VerificationKey, SignContent, SignatureValue)
+
+struct {
+    opaque label<V>;
+    opaque content<V>;
+} SignContent;
+
+```
+### Public Key Encryption
+As with signing, MLS includes a label and context in encryption operations to avoid confusion between ciphertexts produced for different purposes. Encryption and decryption including this label and context are done as follows:
+```
+EncryptWithLabel(PublicKey, Label, Context, Plaintext) =
+  SealBase(PublicKey, EncryptContext, "", Plaintext)
+
+DecryptWithLabel(PrivateKey, Label, Context, KEMOutput, Ciphertext) =
+  OpenBase(KEMOutput, PrivateKey, EncryptContext, "", Ciphertext)
+
+struct {
+  opaque label<V>;
+  opaque context<V>;
+} EncryptContext;
+
+```
+
+### Hash based Identifiers
+Alcuni messaggi MLS fanno riferimento ad altri oggetti MLS tramite hash. Ad esempio, i messaggi di benvenuto si riferiscono ai KeyPackage dei membri accolti, mentre i commit si riferiscono alle proposte a cui fanno riferimento. Questi identificatori sono calcolati come segue:
+
+```
+opaque HashReference<V>;
+
+HashReference KeyPackageRef;
+HashReference ProposalRef;
+
+MakeKeyPackageRef(value)
+  = RefHash("MLS 1.0 KeyPackage Reference", value)
+
+MakeProposalRef(value)
+  = RefHash("MLS 1.0 Proposal Reference", value)
+
+RefHash(label, value) = Hash(RefHashInput)
+```
+
+### Credentials
+Ogni membro di un gruppo presenta delle credenziali che forniscono una o più identità del membro e le associa alla sua chiave di firma. Le identità e la chiave di firma sono verificate dal Servizio di autenticazione in uso per un gruppo. Spetta all'applicazione decidere quali identificatori utilizzare a livello di applicazione. Ad esempio, un certificato in una X509Credential può attestare diversi nomi di dominio o indirizzi e-mail nell'estensione subjectAltName. Un'applicazione può decidere di presentarli tutti all'utente, oppure, se conosce un nome di dominio o un indirizzo e-mail “desiderato”, può verificare che l'identificatore desiderato sia tra quelli attestati. Utilizzando la terminologia di [RFC6125], una credenziale fornisce “identificatori presentati” e spetta all'applicazione fornire un “identificatore di riferimento” per il client autenticato, se presente.
+```
+// See the "MLS Credential Types" IANA registry for values
+uint16 CredentialType;
+
+struct {
+    opaque cert_data<V>;
+} Certificate;
+
+struct {
+    CredentialType credential_type;
+    select (Credential.credential_type) {
+        case basic:
+            opaque identity<V>;
+
+        case x509:
+            Certificate certificates<V>;
+    };
+} Credential;
+```
+#### Credential Validation
+L'applicazione che utilizza MLS è responsabile di specificare quali identificatori ritiene accettabili per ciascun membro di un gruppo (dominio, email etc...).
+L'autenticazione di un membro consiste nel verificare che le credenziali a sua disposizione siano in un formato supportato e successivamente verificando che le credenziali siano corrette. La parte di sistema che si occupa di queste funzionalità è chiamata **Authentication Service(AS)**. Si dice che la credenziale di un membro è stata convalidata con l'AS quando quest'ultimo verifica che gli identificatori presentati della credenziale sono correttamente associati al campo signature_key del LeafNode del membro e che tali identificatori corrispondono agli identificatori di riferimento del membro. Ogni volta che una nuova credenziale viene introdotta nel gruppo, DEVE essere convalidata con il AS. Nei casi in cui la credenziale di un membro viene sostituita, come nei casi di Update e Commit l'AS DEVE anche verificare che l'insieme degli identificatori presentati nella nuova credenziale sia valido come successore dell'insieme degli identificatori presentati nella vecchia credenziale, secondo la politica dell'applicazione.
+#### Credential Expiry and Revocation
+In alcuni credentials schemes delle credenziali valide possono scadere o diventare "invalide", questo è il caso dei certificati x.509. In generale, per evitare problemi operativi come il rifiuto da parte dei nuovi membri di credenziali scadute in un gruppo, le applicazioni che utilizzano tali credenziali devono garantire, per quanto possibile, che tutte le credenziali in uso in un gruppo siano sempre valide. Se un membro scopre che la sua credenziale è scaduta (o lo sarà presto), deve emettere un Update o un Commit che la sostituisca con una credenziale valida. Per questo motivo, i membri DOVREBBERO accettare proposte di aggiornamento e impegni emessi da membri con credenziali scadute, se la credenziale nell'aggiornamento o nell'impegno è valida. Analogamente, quando un client elabora messaggi inviati nel passato (ad esempio, sincronizzandosi con un gruppo dopo essere stato offline), il client DOVREBBE accettare firme da membri con credenziali scadute, poiché la credenziale potrebbe essere stata valida al momento dell'invio del messaggio (ricordarsi che la chat è asincrona).
+**Revocation**: Alcuni schemi di credenziali consentono anche la revoca delle credenziali. La revoca è simile alla scadenza, in quanto una credenziale precedentemente valida diventa non valida. Di conseguenza, la maggior parte delle considerazioni fatte sopra si applicano anche alle credenziali revocate. Tuttavia, le applicazioni potrebbero voler trattare le credenziali revocate in modo diverso, ad esempio eliminando i membri con credenziali revocate e lasciando ai membri con credenziali scadute il tempo di aggiornare le credenziali.
+
+### Message Framing
+#TODO
+
 ## The MLS Approach: TreeSync, TreeKEM, TreeDEM
 Il protocollo MLS raggiunge i suoi obiettivi di performance e sicurezza utilizzando alberi binari per rappresentare la struttura dei dati di gruppo e per stabilire in modo efficiente le chiavi di gruppo. In particolare, l'array di membri raffigurato sopra si trasforma in foglie di un albero binario, dove i nodi interni rappresentano sottogruppi costituiti dai membri sottostanti.
 ![[mls-array-tree.png]]
@@ -91,9 +194,52 @@ La Fig.4 mostra l'albero dopo l'aggiunta di un nuovo dispositivo F al gruppo con
 
 La fig. 5 mostra l'albero dopo che il dispositivo C è stato rimosso dal gruppo e a tutti i suoi gruppi è stata data una sequenza di chiavi hash a partire da una nuova chiave C' che **è sconosciuta a C**.
 
+##### Concurrent operations
+In TreeKEM, se due operazioni vengono eseguite simultaneamente, ci sono molti modi per unirle. Ad esempio, si può assumere che le operazioni provenienti dai dispositivi di un sottoalbero di sinistra debbano essere eseguite prima dei dispositivi di destra. Oppure si possono applicare politiche più sottili come: gli aggiornamenti devono essere elaborati prima delle rimozioni. Possiamo anche affidarci al servizio di consegna per ordinare totalmente tutte le operazioni in modo che tutti i dispositivi le elaborino nello stesso ordine. La **proprietà chiave** di TreeKEM è che la maggior parte delle operazioni sono “unificabili”, nel senso che qualsiasi dispositivo che riceva due operazioni concorrenti sarà in grado di elaborarle ed eseguirle entrambe senza doverne rifiutare una o chiedere ulteriori informazioni. 
+
 ![[issueUpdateKEM.png]]
 <sup>Fig. 6</sup>
+La Figura 6 mostra come due aggiornamenti concomitanti possano essere uniti utilizzando l'ordine dei dispositivi come elemento di parità. Poiché entrambi gli aggiornamenti sono stati emessi rispetto al vecchio stato globale, tuttavia, il nuovo albero non è ancora completamente aggiornato, nel senso che un aggressore che conosce le vecchie chiavi di A e D è in grado di calcolare la nuova chiave di gruppo. In TreeKEM, se due operazioni vengono eseguite simultaneamente, ci sono molti modi per unirle. Ad esempio, si può assumere che le operazioni provenienti dai dispositivi di un sottoalbero di sinistra debbano essere eseguite prima dei dispositivi di destra. Oppure si possono applicare politiche più sottili come: gli aggiornamenti devono essere elaborati prima delle rimozioni. Possiamo anche affidarci al servizio di consegna per ordinare totalmente tutte le operazioni in modo che tutti i dispositivi le elaborino nello stesso ordine. La proprietà chiave di TreeKEM è che la maggior parte delle operazioni sono “unificabili”, nel senso che qualsiasi dispositivo che riceva due operazioni concorrenti sarà in grado di elaborarle ed eseguirle entrambe senza doverne rifiutare una o chiedere ulteriori informazioni. Poiché entrambi gli aggiornamenti sono stati emessi rispetto al vecchio stato globale, tuttavia, il nuovo albero non è ancora completamente aggiornato, nel senso che un aggressore che conosce le vecchie chiavi di A e D è in grado di calcolare la nuova chiave di gruppo, questo poiché H2(D′) e H2(A′) sono state inviate cifrate alle vecchie chiavi pubbliche di A e D. TreeKEM consente l'esecuzione immediata degli aggiornamenti concorrenti, ma i vantaggi della sicurezza post-compromissione non si applicano fino a quando non viene emesso un altro aggiornamento sullo stato unito. Poiché l'elaborazione di un aggiornamento comporta la sovrascrittura delle chiavi, affinché gli aggiornamenti concorrenti funzionino correttamente, le implementazioni devono conservare un insieme di chiavi storiche in modo da poter elaborare gli aggiornamenti inviati sulla base dello stesso stato iniziale Sk. Questo è compatibile con diversi algoritmi di conservazione dello stato, a patto che le implementazioni concordino su quali aggiornamenti debbano essere elaborati e quali rifiutati (e quindi quando le chiavi possono essere scartate).
+![[updateAfterIssueKEM.png]]
+<sup>Fig. 7</sup>
+Dopo aver elaborato gli aggiornamenti contemporanei dei dispositivi A e D, il dispositivo B invia un nuovo aggiornamento. Questo aggiornamento si propaga lungo l'albero, “curando” così tutti i nodi dell'albero in uno stato unito coerente. Una volta elaborato il nuovo aggiornamento, si ottiene una PCS contro la compromissione di tutti i dispositivi; in altre parole, un avversario che compromette i vecchi stati di A, B e D non può più calcolare la nuova chiave di gruppo.
 
+#### Parent Node Content
 
-#### Cos'è un sottogruppo?
-Un sottogruppo è un insieme di dispositivi (o membri) che occupano una porzione specifica dell'albero di TreeKEM. Nell'albero, i nodi interni rappresentano i sottogruppi, mentre le foglie rappresentano i singoli dispositivi. Ogni sottogruppo è, quindi, un sottoinsieme dei membri totali del gruppo di comunicazione. Il protocollo MLS utilizza una struttura ad albero per ogni gruppo per costruire una serie di sottogruppi ausiliari che aiutano a ridurre la complessità di ogni operazione di gruppo.
+```
+struct {
+    HPKEPublicKey encryption_key;
+    opaque parent_hash<V>;
+    uint32 unmerged_leaves<V>;
+} ParentNode;
+```
+
+Il campo encryption_key contiene una chiave pubblica HPKE la cui chiave privata è detenuta solo dai membri alle foglie tra i suoi discendenti. Il campo parent_hash contiene un hash del nodo genitore di questo nodo, come descritto nella Sezione 7.9. Il campo unmerged_leaves elenca le foglie sotto questo nodo genitore che sono unmerged, secondo i loro indici tra tutte le foglie dell'albero. Le voci del vettore unmerged_leaves DEVONO essere ordinate in ordine crescente.
+
+#### Leaf Node Content
+Un nodo foglia dell'albero descrive tutti i dettagli del singolo client e firmati da esso.
+
+```
+struct {
+    HPKEPublicKey encryption_key;
+    SignaturePublicKey signature_key;
+    Credential credential;
+    Capabilities capabilities;
+
+    LeafNodeSource leaf_node_source;
+    select (LeafNode.leaf_node_source) {
+        case key_package:
+            Lifetime lifetime;
+
+        case update:
+            struct{};
+
+        case commit:
+            opaque parent_hash<V>;
+    };
+
+    Extension extensions<V>;
+    /* SignWithLabel(., "LeafNodeTBS", LeafNodeTBS) */
+    opaque signature<V>;
+} LeafNode;
+```
