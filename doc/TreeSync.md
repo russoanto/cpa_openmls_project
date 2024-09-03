@@ -22,6 +22,8 @@ Questo significherebbe avere per ogni foglia **log(n)** firme.
 Come descritto dallo standard [[Messaging Layer Security#TreeKEM]] nella descrizione formale dello stato locale di una foglia per ogni nodo dobbiamo conservare un nuovo valore che prende il nome di **parent hash** che verrà firmato con con la propria chiave pubblica.
 ![[final_attempt_3.png]]
 
+
+
 ![[final_attempt_4.png]]
 Cosa succede quando abbiamo un aggiornamento di credenziali?
 ![[final_attempt_update.png]]
