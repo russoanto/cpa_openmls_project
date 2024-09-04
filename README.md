@@ -25,5 +25,5 @@ Usage
 # How to launch
 In the cpa_openmls_project folder run:
 ```bash
-	cargo run
+cargo run
 ```
