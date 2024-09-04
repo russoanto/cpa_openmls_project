@@ -22,6 +22,8 @@ Usage
     - Invite other users to join the group.
     - Send encrypted messages within the group.
 
+# Doc
+In the doc folder, you can find the presentation and the materials used for its creation.
 # How to launch
 In the cpa_openmls_project folder run:
 ```bash
