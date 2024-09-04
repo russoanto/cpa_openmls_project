@@ -12,9 +12,6 @@ This test simulates various group operations like Add, Update, Remove in a small
 - Charlie sends a message to the group
 - Charlie updates and commits
 - Charlie removes Bob
-- Alice removes Charlie and adds Bob
-- Bob leaves
-- Test saving the group state
 
 # Purpose
 
@@ -24,4 +21,9 @@ Usage
     - Start the application and create a new group.
     - Invite other users to join the group.
     - Send encrypted messages within the group.
-    - Observe the protocol handling key changes when users join or leave the group.
+
+# How to launch
+In the cpa_openmls_project folder run:
+```bash
+	cargo run
+```
