@@ -67,6 +67,7 @@ fn main() {
         .build();
 
     // === Alice creates a group ===
+    println!("=== Alice creates a group ===");
     let mut alice_group = MlsGroup::new_with_group_id(
         alice_provider,
         &alice_signer,
@@ -77,6 +78,7 @@ fn main() {
     .expect("An unexpected error occurred.");
 
     // === Alice adds Bob ===
+    println!("=== Alice adds Bob ===");
     let welcome =
         match alice_group.add_members(alice_provider, &alice_signer, &[bob_key_package]) {
             Ok((_, welcome, _)) => welcome,
@@ -94,6 +96,7 @@ fn main() {
             add.add_proposal().key_package().leaf_node().credential(),
             &bob_credential.credential
         );
+
         // Check that Alice added Bob
         assert!(
             matches!(add.sender(), Sender::Member(member) if *member == alice_group.own_leaf_index())
@@ -157,24 +160,22 @@ fn main() {
         .expect("Could not process message.");
     let sender = processed_message.credential().clone();
 
+    let application_message = match processed_message.into_content(){
+        ProcessedMessageContent::ApplicationMessage(msg) => msg,
+        _ => unreachable!("Expected an ApplicationMessage."),
+    };
+    
+    // Check the message
+    assert_eq!(application_message.into_bytes(), message_alice);
 
-    // Check that we received the correct message
-    if let ProcessedMessageContent::ApplicationMessage(application_message) =
-        processed_message.into_content()
-    {
-        // Check the message
-        assert_eq!(application_message.into_bytes(), message_alice);
-        // Check that Alice sent the message
-        assert_eq!(
-            &sender,
-            alice_group
-                .credential()
-                .expect("An unexpected error occurred.")
-        );
-    } else {
-        unreachable!("Expected an ApplicationMessage.");
-    }
-
+    // Check that Alice sent the message
+    assert_eq!(
+        &sender,
+        alice_group
+            .credential()
+            .expect("An unexpected error occurred.")
+    );
+        
     // === Bob updates and commits ===
     let (queued_message, _welcome_option, _group_info) = bob_group
         .self_update(bob_provider, &bob_signer, LeafNodeParameters::default())
@@ -201,7 +202,7 @@ fn main() {
     } else {
         unreachable!("Expected a StagedCommit.");
     }
-    // Make sure that both groups have the same epoch authenticator
+    //// Make sure that both groups have the same epoch authenticator
     // assert_eq!(
     //     alice_group.epoch_authenticator().as_slice(),
     //     bob_group.epoch_authenticator().as_slice()
@@ -226,6 +227,7 @@ fn main() {
     );
 
     // === Bob adds Charlie ===
+    println!("=== Bob adds Charlie ===");
     let charlie_key_package = generate_key_package(
         ciphersuite,
         Extensions::empty(),
@@ -401,7 +403,7 @@ fn main() {
     );
 
     // === Charlie removes Bob ===
-    println!(" >>> Charlie remove bob");
+    println!("=== Charlie removes Bob ===");
     let (queued_message, _welcome_option, _group_info) = charlie_group
         .remove_members(
             charlie_provider,
