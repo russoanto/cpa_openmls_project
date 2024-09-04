@@ -60,5 +60,3 @@ MlsGroupJoinConfig contiene le seguenti opzioni di configurazione rilevanti per 
         .use_ratchet_tree_extension(true)
         .build();
 ```
-
-## Creating Groups
