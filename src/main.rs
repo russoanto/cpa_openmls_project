@@ -77,6 +77,9 @@ fn main() {
     )
     .expect("An unexpected error occurred.");
 
+    assert_eq!(alice_group.members().count(), 1);
+
+
     // === Alice adds Bob ===
     println!("=== Alice adds Bob ===");
     let welcome =
@@ -202,7 +205,7 @@ fn main() {
     } else {
         unreachable!("Expected a StagedCommit.");
     }
-    //// Make sure that both groups have the same epoch authenticator
+    // // Make sure that both groups have the same epoch authenticator
     // assert_eq!(
     //     alice_group.epoch_authenticator().as_slice(),
     //     bob_group.epoch_authenticator().as_slice()
